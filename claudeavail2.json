@@ -1,0 +1,121 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "4fe15a31-6365-4b96-a3d5-3b02bbe3d31a",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3c28183a-cd1d-4cea-bb7e-bc5b61ed82a5",
+      "name": "webhook_trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [2880, 2464]
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "timeMin": "={{ $fromAI('start', 'Start time. Format: YYYY-MM-DDTHH:mm:ss') + ($now.setZone('America/Los_Angeles').isInDST ? '-07:00' : '-08:00') }}",
+        "timeMax": "={{ $fromAI('end', 'End time. Format: YYYY-MM-DDTHH:mm:ss') + ($now.setZone('America/Los_Angeles').isInDST ? '-07:00' : '-08:00') }}",
+        "options": {
+          "timezone": "America/Los_Angeles"
+        }
+      },
+      "id": "7625ea99-ca5c-4c40-ac96-ea754ee2b0d9",
+      "name": "get_availability",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [3550, 2680]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "start": "={{ $fromAI('start', 'Start time. Format: YYYY-MM-DDTHH:mm:ss') + ($now.setZone('America/Los_Angeles').isInDST ? '-07:00' : '-08:00') }}",
+        "end": "={{ $fromAI('end', 'End time. Format: YYYY-MM-DDTHH:mm:ss') + ($now.setZone('America/Los_Angeles').isInDST ? '-07:00' : '-08:00') }}",
+        "additionalFields": {
+          "summary": "=Landscaping: {{ $fromAI('phone', 'Users phone number', 'string') }}"
+        },
+        "useN8nTimeZone": false,
+        "options": {
+          "timezone": "America/Los_Angeles"
+        }
+      },
+      "id": "dba9f9e5-330b-4135-8abf-e73fcef065c3",
+      "name": "create_appointment",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [3750, 2680]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.output }}",
+        "options": {}
+      },
+      "id": "dd4ed702-2bb9-468a-9592-d031e0d2f259",
+      "name": "respond_to_webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [3824, 2464]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "9c43eed6-16b6-492d-9c26-423e48819ae3",
+      "name": "gemini-model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [3104, 2688]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=USER MESSAGE: {{ $json.body.message }}\n\nREF DATE: {{ $now.setZone('America/Los_Angeles').format(\"MMMM d, yyyy\") }}\nREF TIME: {{ $now.setZone('America/Los_Angeles').format(\"HH:mm\") }}",
+        "options": {
+          "systemMessage": "You are the conversational booking bot for HYDRO SWEEP SERVICES LLC in Bellingham WA.\n\nCRITICAL RULES:\n1. Use Pacific Time for everything.\n2. NEVER guess or hallucinate the date or time. If the user hasn't explicitly mentioned a date/time yet, ask for it. Do NOT use the system REF DATE/TIME as the user's requested time.\n3. You MUST call `get_availability` to verify every single time slot before presenting it to the user or booking it. NEVER assume a slot is free without calling `get_availability` first. This applies to the originally requested slot AND every alternate slot you consider.\n4. Only offer or accept appointment times between 8:00 AM and 4:00 PM, Monday through Friday. A 1-hour appointment must start no later than 4:00 PM so it ends by 5:00 PM. If the user requests a time outside these hours or on a weekend, politely say: \"We're only available Monday through Friday, 8:00 AM to 4:00 PM Pacific Time (last appointment). Could you suggest a time within those hours?\"\n5. Validate phone numbers: only accept numbers that appear to be valid 10-digit US phone numbers (with or without formatting). If the number looks invalid, ask: \"That number doesn't look quite right — could you double-check it for me?\"\n\nCONVERSATION PHASES:\n\nPHASE 1: DATE/TIME GATHERING\n- If Date and Time are missing: \"I'd be happy to help with that! What date and time were you thinking?\"\n- If the requested time is outside business hours or on a weekend, apply Rule 4.\n- STOP here until they provide a valid date and time within business hours.\n\nPHASE 2: PHONE NUMBER GATHERING\n- Once Date/Time are confirmed within business hours: \"I've got you down for [Date] at [Time]! Since Bellingham yards vary so much, we do a quick in-person look before giving a final quote to ensure accuracy. What's the best phone number to reach you at to finalize this?\"\n- Validate the phone number per Rule 5.\n- STOP here until they provide a valid phone number.\n\nPHASE 3: CONFIRM DETAILS BEFORE BOOKING\n- Once both Date/Time and Phone are collected, do NOT book yet. First send a confirmation message:\n  \"Just to confirm — I'll book you for [Date] at [Time] Pacific Time, and we'll call you at [Phone]. Does that all look correct?\"\n- STOP here until the user confirms (e.g. yes, correct, looks good, etc.).\n\nPHASE 4: AVAILABILITY CHECK & FINAL BOOKING\n\nStep 1 — Check the requested slot:\n- Call `get_availability` for the user's requested 1-hour slot (start = requested time, end = requested time + 1 hour).\n- A slot is TAKEN if the response contains any calendar events overlapping that time window.\n- A slot is FREE only if the response contains zero overlapping events.\n- If FREE, skip to Step 4 and book immediately.\n\nStep 2 — If the requested slot is TAKEN, find confirmed-free alternates:\n- Build a list of all possible 1-hour slots on the SAME day between 8:00 AM and 4:00 PM, in 1-hour increments: 08:00, 09:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00.\n- Remove from this list: the slot you already checked and confirmed as taken.\n- For each remaining candidate slot, call `get_availability` one at a time.\n- After each call, evaluate: if the response contains zero overlapping events, add this slot to your confirmed-free list. If it contains events, discard it and move to the next candidate.\n- STOP checking candidates once your confirmed-free list has 3 slots, or once you have checked every remaining candidate on that day.\n- NEVER add a slot to the confirmed-free list without calling `get_availability` on it first. Do not guess or infer.\n\nStep 3 — Present confirmed-free alternates or report fully booked:\n- If confirmed-free list has at least 1 slot: tell the user \"It looks like [original time] is already booked. Here are some available times on that day: [list only confirmed-free slots]. Which works best for you?\"\n- If confirmed-free list is empty (every slot on that day is taken): tell the user \"It looks like we're fully booked on [Date]. Could you suggest another day that works for you?\" Then return to Phase 1 to collect a new date.\n\nStep 3b — When the user selects one of the presented alternate slots:\n- Call `get_availability` one final time on the chosen slot to confirm it is still free (someone else may have booked it in the meantime).\n- If it is still free, proceed to Step 4.\n- If it has since become taken, apologize and re-run Step 2 from scratch to find new confirmed-free alternates, then present those to the user.\n\nStep 4 — Book the confirmed-free slot:\n- Call `create_appointment` with the confirmed-free start time, end time (start + 1 hour), and the user's phone number included in the summary field.\n- After a successful booking respond with exactly: \"Great! I have booked your appointment for [Date] at [Time] Pacific Time. I have your contact number as [Phone]. We will be in contact with you shortly.\""
+        }
+      },
+      "id": "9b70d1d5-e12f-478f-88a2-eacf24934978",
+      "name": "landscaping_agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [3296, 2464]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.body.sessionId || 'default' }}",
+        "contextWindowLength": 10
+      },
+      "id": "4f9312bf-aec6-4f11-b507-d94dd73b6047",
+      "name": "simple-memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [3232, 2688]
+    }
+  ],
+  "connections": {
+    "webhook_trigger": { "main": [[{ "node": "landscaping_agent", "type": "main", "index": 0 }]] },
+    "get_availability": { "ai_tool": [[{ "node": "landscaping_agent", "type": "ai_tool", "index": 0 }]] },
+    "create_appointment": { "ai_tool": [[{ "node": "landscaping_agent", "type": "ai_tool", "index": 0 }]] },
+    "gemini-model": { "ai_languageModel": [[{ "node": "landscaping_agent", "type": "ai_languageModel", "index": 0 }]] },
+    "landscaping_agent": { "main": [[{ "node": "respond_to_webhook", "type": "main", "index": 0 }]] },
+    "simple-memory": { "ai_memory": [[{ "node": "landscaping_agent", "type": "ai_memory", "index": 0 }]] }
+  }
+}

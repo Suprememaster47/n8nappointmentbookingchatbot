@@ -1,0 +1,2 @@
+claudeavail2 is the most advanced but might need a paid api key with credits. Use gemini free api key for testing. Fixed check availability and booking correct time in calendar. 
+gemini4b webhooks works perfectly with free api key. Might have trouble with booking in google calendar.

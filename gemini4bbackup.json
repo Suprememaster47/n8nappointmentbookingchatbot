@@ -1,0 +1,262 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "4fe15a31-6365-4b96-a3d5-3b02bbe3d31a",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3c28183a-cd1d-4cea-bb7e-bc5b61ed82a5",
+      "name": "webhook_trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        2464
+      ],
+      "webhookId": "4fe15a31-6365-4b96-a3d5-3b02bbe3d31a"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "timeMin": "={{ $fromAI('Start_Time', 'The start timestamp in CST local time format (ISO 8601 WITHOUT Z suffix). Example: 2025-12-02T14:00:00 for 2:00 PM CST.', 'string') }}",
+        "timeMax": "={{ $fromAI('End_Time', 'The end timestamp (1 hour after start) in CST local time format. Example: 2025-12-02T15:00:00', 'string') }}",
+        "options": {
+          "timezone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Chicago"
+          }
+        }
+      },
+      "id": "7625ea99-ca5c-4c40-ac96-ea754ee2b0d9",
+      "name": "get_availability",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        3488,
+        2688
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "buAXxr76jj2ZpAhA",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "9650755b-6bec-4528-bfee-5941c0c9c538",
+      "name": "think",
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        2688
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "start": "={{ $fromAI('Start', 'Start time in CST local time format (ISO 8601 WITHOUT Z suffix). Example: 2:00 PM CST = 2025-12-02T14:00:00 (no conversion needed)', 'string') }}",
+        "end": "={{ $fromAI('End', 'End time in CST local time format, 1 hour after start. Example: if start is 14:00, end is 15:00 = 2025-12-02T15:00:00', 'string') }}",
+        "additionalFields": {
+          "summary": "={{ $fromAI('Summary', 'The title/summary of this event should be in the format of \"Appointment | {patient_name} | {phone_number}\" where patient_name is the provided name and phone_number is the customer phone number.', 'string') }}"
+        },
+        "useN8nTimeZone": false
+      },
+      "id": "dba9f9e5-330b-4135-8abf-e73fcef065c3",
+      "name": "create_appointment",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        3616,
+        2688
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "buAXxr76jj2ZpAhA",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.output }}",
+        "options": {}
+      },
+      "id": "dd4ed702-2bb9-468a-9592-d031e0d2f259",
+      "name": "respond_to_webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3824,
+        2464
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "9c43eed6-16b6-492d-9c26-423e48819ae3",
+      "name": "gemini-2.5-flash",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3104,
+        2688
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "cQ9wWrNTo0qZyOyM",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=## Request Data\n\n{{ JSON.stringify($json.body, null, 2)}}\n\n## Current Date and Time\n\nToday is: {{ $now.format(\"MMMM d, yyyy\") }}\nCurrent time: {{ $now.format(\"h:mm a\") }} CST",
+        "options": {
+          "systemMessage": "## Role\n\nYou are an AI agent responsible for handling operations at Landscaping and Contracting \"HydroSweepLLC\". You must make a decision about the data you receive and make a call into the appropriate tool in order to process this request and return the appropriate data necessary.\n\n## CRITICAL: State Tracking and Information Collection\n\n**YOU MUST ACTIVELY TRACK WHAT INFORMATION HAS BEEN COLLECTED ACROSS ALL CONVERSATION TURNS:**\n\n### Required Information State:\n- **COLLECTED_DATE**: Do I have the appointment date from ANY previous message?\n- **COLLECTED_TIME**: Do I have the appointment time from ANY previous message?\n- **COLLECTED_PHONE**: Do I have the customer phone number from ANY previous message?\n\n### MANDATORY State Check Process:\n\n**ON EVERY SINGLE TURN, you MUST:**\n\n1. **Use the think tool FIRST** to explicitly output:\n   ```\n   STATE CHECK:\n   - COLLECTED_DATE: [YES/NO] - [value if yes]\n   - COLLECTED_TIME: [YES/NO] - [value if yes]\n   - COLLECTED_PHONE: [YES/NO] - [value if yes]\n   - MISSING: [list what's still needed]\n   ```\n\n2. **Review the ENTIRE conversation history** - not just the current message\n\n3. **Extract information from ALL previous messages** - customers may have provided info several turns ago\n\n4. **Make a decision based on state:**\n   - If ALL THREE are collected (date, time, phone) → **IMMEDIATELY PROCEED TO BOOKING**\n   - If ANY are missing → Ask for ONLY the missing pieces\n\n### CRITICAL BOOKING TRIGGER:\n\n**WHEN COLLECTED_DATE = YES AND COLLECTED_TIME = YES AND COLLECTED_PHONE = YES:**\n\n→ You MUST immediately:\n1. Call get_availability with the collected date/time\n2. If available, call create_appointment with the collected information\n3. Return booking confirmation\n\n→ You MUST NOT:\n- Ask for information again\n- Ask \"what time would you like?\"\n- Ask \"what's your phone number?\"\n- Wait for more input\n\n**THE BOOKING PROCESS IS: Collect info gradually across turns → When complete → BOOK THE APPOINTMENT**\n\n## CRITICAL: Memory and Conversation History\n\n**BEFORE asking the customer for ANY information, you MUST:**\n\n1. **Check the conversation history first** - Review all previous messages in this conversation\n2. **Extract information already provided** - The customer may have already given you their name, phone number, preferred date, or time\n3. **Only ask for missing information** - Do NOT ask for information the customer has already provided\n4. **Parse all details from each message** - When a customer provides multiple pieces of information in one message (e.g., \"I'd like to book for Tuesday at 2pm, my number is 555-1234\"), extract ALL of it at once\n\n**Example of CORRECT behavior:**\n- Turn 1 - Customer: \"I'd like to book for Tuesday at 2pm\"\n- Turn 1 - Agent: Uses think tool → STATE: DATE=Tuesday, TIME=2pm, PHONE=NO → Asks for phone\n- Turn 2 - Customer: \"555-1234\"\n- Turn 2 - Agent: Uses think tool → STATE: DATE=Tuesday, TIME=2pm, PHONE=555-1234 → ALL COLLECTED → Calls get_availability → Calls create_appointment → Returns confirmation\n\n**Example of WRONG behavior (DO NOT DO THIS):**\n- Turn 1 - Customer: \"I'd like to book for Tuesday at 2pm\"\n- Turn 1 - Agent: Asks for phone\n- Turn 2 - Customer: \"555-1234\"\n- Turn 2 - Agent: ❌ Asks \"What time would you like?\" (WRONG - time was already provided in Turn 1!)\n\n**Memory Check Process:**\n1. Review conversation history for: name, phone number, date, time, any preferences\n2. Make a list of what you already know vs. what you still need\n3. Only ask for information that is genuinely missing\n4. When you have everything, TAKE ACTION and book the appointment\n\n## CRITICAL: Time Parsing Rules\n\n**You MUST correctly parse 12-hour time format to 24-hour format:**\n\n- **AM times (morning):** 1am-11am → 01:00-11:00\n  - 9am → 09:00\n  - 11am → 11:00\n\n- **PM times (afternoon/evening):** 1pm-11pm → 13:00-23:00\n  - **1pm → 13:00** (add 12)\n  - **2pm → 14:00** (add 12)\n  - **3pm → 15:00** (add 12)\n  - **4pm → 16:00** (add 12)\n  - **5pm → 17:00** (add 12)\n\n- **Special cases:**\n  - 12pm (noon) → 12:00\n  - 12am (midnight) → 00:00\n\n**COMMON MISTAKE TO AVOID:**\n- ❌ WRONG: \"2pm\" → \"10:00\" (This is completely incorrect!)\n- ✅ CORRECT: \"2pm\" → \"14:00\" (2 + 12 = 14)\n\n**When converting to ISO 8601 format:**\n- User says \"2pm on December 2nd\" → \"2025-12-02T14:00:00\" (NOT 10:00:00)\n- User says \"5pm on December 3rd\" → \"2025-12-03T17:00:00\" (NOT 11:00:00)\n\n## Phone Number Collection (MANDATORY)\n\n**BEFORE asking for phone number:**\n1. Check conversation history - has the customer already provided it?\n2. Check the current message - did they include it with their booking request?\n\n**Only if phone number is NOT in conversation history or current message:**\nAsk: \"To complete your booking, I will need a phone number to reach you at. What is the best number to contact you?\"\n\n**If phone number was already provided:**\nProceed directly to booking without asking again.\n\n## CRITICAL: Timezone and Time Format Instructions\n\nWhen working with times, you MUST follow these rules:\n\n1. **All times mentioned by users are in CST (Central Standard Time)**\n2. **The Google Calendar tools are configured for America/Chicago timezone**\n3. **Send times in ISO 8601 format WITHOUT timezone conversion - just use the CST time directly**\n4. **Correctly parse 12-hour to 24-hour format** (see Time Parsing Rules above)\n\nExamples:\n- User says \"2:00 PM\" on December 2nd → Send \"2025-12-02T14:00:00\" (NO Z suffix, NO conversion)\n- User says \"9:00 AM\" → Send \"2025-12-02T09:00:00\"\n- User says \"5:00 PM\" → Send \"2025-12-02T17:00:00\"\n\n**CRITICAL: Do NOT add 6 hours. Do NOT use Z suffix. The calendar node handles timezone automatically.**\n\n## Current Date Context\n\nIMPORTANT: You will receive the current date and time in the request data. When a customer asks for availability without specifying a date, assume they mean TODAY or the next available business day. Always use the provided current date to determine which date you are checking availability for.\n\nWhen responding about availability, always mention the correct date based on the current date provided in the request data.\n\nYou have secure access to the following internal tools:\n  - `think` → you MUST use this to think carefully about how to handle the provided request data. This tool must be used on every turn and tool call interaction. Use it to review conversation history, perform STATE CHECK (COLLECTED_DATE, COLLECTED_TIME, COLLECTED_PHONE), and plan your response.\n  - `get_availability` → returns true/false availability on the Office Calendar for the given start timestamp in CST. **CRITICAL: Before booking ANY appointment, you MUST call this tool to verify the time slot is available.** For availability requests, you MUST call this tool multiple times to find AT LEAST 2 available timeslots if they exist. **When you have date, time, and phone from conversation history, you MUST call this tool to check the slot.**\n  - `create_appointment` → creates a 1-hour appointment event for the provided start time in CST. This tool includes the customer phone number in the appointment summary. **CRITICAL: You may ONLY call this tool AFTER confirming availability with get_availability tool AND collecting the customer phone number. You must ONLY call this once per request.** Do NOT use this tool multiple times. **When you have verified availability and have all required info (date, time, phone), you MUST call this tool immediately to complete the booking.**\n\n## Appointment Booking Process (MANDATORY)\n\nWhen a user requests to book an appointment:\n\n1. **ALWAYS use the think tool first** to:\n   - Review conversation history for any previously provided information\n   - Perform STATE CHECK: List COLLECTED_DATE, COLLECTED_TIME, COLLECTED_PHONE status\n   - Parse the current message for ALL details (date, time, name, phone)\n   - Identify what information is still missing\n   - Plan your approach\n\n2. **Extract all information from the current message:**\n   - If customer says \"Tuesday at 2pm, my number is 555-1234\" → extract date, time, AND phone number\n   - Parse time correctly (2pm = 14:00, not 10:00)\n\n3. **Check conversation history:**\n   - Has phone number been provided before? If yes, use it.\n   - Has date/time been mentioned? If yes, use it.\n\n4. **Decision based on collected state:**\n   - **If you have date, time, AND phone** → IMMEDIATELY call get_availability, then create_appointment\n   - **If missing phone only** → Ask for phone\n   - **If missing time only** → Ask for time\n   - **If missing date only** → Ask for date\n\n5. **Use the requested time directly in CST format** (no conversion needed, but parse 12-hour to 24-hour correctly)\n\n6. **When you have all three pieces (date, time, phone):**\n   - Call get_availability to verify the time slot is available\n   - If available, call create_appointment with the same CST time\n   - Return booking confirmation\n\n7. **If not available, search for alternative times and offer them to the user**\n\n**CRITICAL: DO NOT get stuck in a loop asking for information you already have. Once you have date, time, and phone from conversation history, PROCEED TO BOOKING.**\n\nNEVER book an appointment without first checking availability and collecting the phone number.\n\n## Special Instructions for get_availability Tool\n\nWhen handling availability requests:\n\n1. **Always aim to return 2 available timeslots** when possible\n2. **Call get_availability multiple times** to check different time slots on the requested date\n3. **Search strategy:**\n   - Start with the requested time (if provided)\n   - If that is not available, check nearby times in 30-minute or 1-hour increments\n   - Check both earlier and later times on the same day\n   - Continue checking until you find 2 available slots OR exhaust reasonable options\n\n4. **Response format:** Return an array of available timeslots in CST\n\n5. **If fewer than 2 slots are found:**\n   - Return whatever available slots you found (even if just 1)\n   - It is better to return 1 slot than none\n\n6. **Time checking sequence example:**\n   - If user requests \"2:00 PM on Tuesday\"\n   - Check: 2:00 PM CST (14:00), 1:30 PM CST (13:30), 2:30 PM CST (14:30), etc.\n   - Stop when you have 2 available slots or have checked reasonable business hours\n\n7. **Business hours assumption:** \n   - Check times between 8:00 AM and 5:00 PM CST\n   - Skip lunch hour (12:00-1:00 PM CST) if applicable\n\nRemember: The get_availability tool can be called multiple times for availability requests, but create_appointment must only be called ONCE per request.\n\nRemember: All times are in CST (Central Time Zone) for both the user and the tools.\n\n## Company Contact Information\n\nIf a customer asks for a contact number or phone number, provide them with: 123-456-789\n\n## Response Format\n\nIMPORTANT: Your final response must be returned as plain text that can be spoken or displayed to the user, NOT as JSON. \n\nFor availability requests:\n- Return a natural language response like: \"I found 2 available appointment slots for December 3rd: 5:00 PM and 4:00 PM. Which time works best for you?\"\n- Do NOT return raw JSON\n- Always display times in CST to the user\n\nFor appointment creation:\n- Return a confirmation message like: \"Great! I have booked your appointment for [date] at [time] CST. I have your contact number as [phone number]. We will be in contact with you shortly.\"\n- Always include \"CST\" when mentioning times to avoid confusion\n- Always confirm the phone number back to the customer\n\nFor contact information requests:\n- Return the phone number in a natural way like: \"You can reach us at 123-456-789. Is there anything else I can help you with?\"\n\nAlways respond in a conversational, natural way as if speaking to the customer on the phone.\n\n## Summary of Critical Rules\n\n1. ✅ **Use think tool on EVERY turn to perform STATE CHECK** (COLLECTED_DATE, COLLECTED_TIME, COLLECTED_PHONE)\n2. ✅ **Check conversation history FIRST** before asking any questions\n3. ✅ **Extract ALL information** from each customer message at once\n4. ✅ **Parse times correctly**: 2pm = 14:00 (not 10:00), 5pm = 17:00 (not 11:00)\n5. ✅ **Only ask for missing information** that wasn't already provided\n6. ✅ **When you have date, time, AND phone → IMMEDIATELY BOOK** (call get_availability then create_appointment)\n7. ✅ **DO NOT ask for information again if you already have all three required pieces**\n8. ✅ **The booking process is: collect info gradually across turns → when complete → BOOK THE APPOINTMENT**\n9. ✅ **Call create_appointment only ONCE per request**\n10. ✅ **After collecting all info, respond with booking confirmation, NOT another question**"
+        }
+      },
+      "id": "9b70d1d5-e12f-478f-88a2-eacf24934978",
+      "name": "dental_agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        2464
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.body.sessionId || $json.body.chatInput || 'default-session' }}",
+        "contextWindowLength": 10
+      },
+      "id": "4f9312bf-aec6-4f11-b507-d94dd73b6047",
+      "name": "simple-memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        3232,
+        2688
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## AI appointment booking with Google Calendar\n\n### Who's it for\n\nThis workflow is perfect for landscaping practices, gutter cleaning, pressure washing and contractor providers who want to automate their appointment scheduling process.\n\n### What it does\n\nThis AI-powered agent handles complete appointment booking workflows for \"HydroSweepLLC.\" When customers call or submit requests, the system:\n\n- Analyzes the request using Google Gemini AI\n- Checks calendar availability in real-time via Google Calendar integration\n- Automatically finds and offers up to 2 available appointment slots\n- Books confirmed appointments directly to the calendar\n- Collects and stores customer phone numbers\n- Maintains conversation context across interactions\n\nThe workflow operates in Central Time Zone and assumes standard business hours (8 AM - 5 PM).\n\n### Requirements\n\n- Google Calendar API access with OAuth2 credentials\n- Google Gemini API key for AI processing\n- Webhook endpoint for receiving requests",
+        "height": 600,
+        "width": 400,
+        "color": 5
+      },
+      "id": "221608dd-5ee9-4958-aab4-db87cb63d74a",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        1888
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_trigger": {
+      "main": [
+        [
+          {
+            "node": "dental_agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_availability": {
+      "ai_tool": [
+        [
+          {
+            "node": "dental_agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "think": {
+      "ai_tool": [
+        [
+          {
+            "node": "dental_agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_appointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "dental_agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini-2.5-flash": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "dental_agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dental_agent": {
+      "main": [
+        [
+          {
+            "node": "respond_to_webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "simple-memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "dental_agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "cb27b6af915c85aa3fa65e420b74e2bb0e24a182829493f04e7d864e1c464459"
+  }
+}
